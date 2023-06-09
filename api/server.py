@@ -19,7 +19,7 @@ def run_server(port: int = 8080, ip: str = "127.0.0.1", loglevel: int = 10):
 
     pcommand_map = {
         "START": run_stream,
-        "START_RANDOM": partial(run_stream, random=True),
+        "START_RANDOM": partial(run_stream, random_data=True),
     }
 
     logger.debug("Initializing server")
