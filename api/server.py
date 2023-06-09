@@ -1,3 +1,4 @@
+#  Note this still follows the old setup structure before dareplane_utils was created
 import socket
 import orjson
 
@@ -23,7 +24,7 @@ def main(port: int = 8080, ip: str = "127.0.0.1", loglevel: int = 10):
 
     logger.debug("Initializing server")
     server = DefaultServer(
-        port, ip=ip, pcommand_map=pcommand_map, name="copydraw_server"
+        port, ip=ip, pcommand_map=pcommand_map, name="mockup_server"
     )
 
     # initialize to start the socket

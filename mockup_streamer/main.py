@@ -84,7 +84,7 @@ def load_data(
 
 
 def add_bv_ch_info(info: pylsl.StreamInfo, raw: mne.io.BaseRaw):
-    info.desc().append_child_value("manufacturer", "BrainVision")
+    info.desc().append_child_value("manufacturer", "MockupStream")
     chns = info.desc().append_child("channels")
 
     for chan_ix, channel in enumerate(raw.info["chs"]):

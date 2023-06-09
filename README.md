@@ -1,12 +1,12 @@
 # Mockup_streamer
 
-This is a module for the [DAREPLANE](https://neurotechlab.socsci.ru.nl/research/dareplane/) project which provides streaming from recorded data (currently only EEG from BrainVision).
+This is a module for the [Dareplane](https://github.com/bsdlab/Dareplane) project which provides mockup streaming from recorded data (currently only EEG from BrainVision files) or randomly generated data.
 
 ## Running the module
 
-As for all DAREPLANE modules, you can have this run standalone, via a TCP server or here also as a Docker container. The core interaction is meant to take place via the TCP server.
+As for all Dareplane modules, you can have this run standalone, via a TCP server or here also as a Docker container. The core interaction is meant to take place via the TCP server.
 
-### Running in shell
+### Running in a shell
 
 #### As standalone python
 
