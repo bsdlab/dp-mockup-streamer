@@ -14,7 +14,7 @@ from mockup_streamer.utils.logging import logger
 from dareplane_default_server.server import DefaultServer
 
 
-def main(port: int = 8080, ip: str = "127.0.0.1", loglevel: int = 10):
+def run_server(port: int = 8080, ip: str = "127.0.0.1", loglevel: int = 10):
     logger.setLevel(loglevel)
 
     pcommand_map = {
