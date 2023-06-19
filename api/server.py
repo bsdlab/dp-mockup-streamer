@@ -1,17 +1,15 @@
 #  Note this still follows the old setup structure before dareplane_utils was created
 import socket
-import orjson
-
 import threading
-from typing import Callable
-from fire import Fire
 from functools import partial
+from typing import Callable
+
+import orjson
+from dareplane_default_server.server import DefaultServer
+from fire import Fire
 
 from mockup_streamer.main import run_stream
 from mockup_streamer.utils.logging import logger
-
-
-from dareplane_default_server.server import DefaultServer
 
 
 def run_server(port: int = 8080, ip: str = "127.0.0.1", loglevel: int = 10):

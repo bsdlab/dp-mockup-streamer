@@ -1,5 +1,5 @@
 [sources]
-data_source='.'                         # Use absolute paths
+data_source='../test_data/'                         # Use absolute paths
 source_type='BV'                        # this will specify the loader that is loaded
 files_pattern='*.vhdr'                  # the files to check
 
@@ -7,7 +7,9 @@ files_pattern='*.vhdr'                  # the files to check
 stream_name='mock_EEG_stream'
 mode='repeat'                           # repeat or once
 type='regular'                          # regular or irregular
-sampling_freq=100                       # sampling rate to be simulated
+sampling_freq='derive'                  # sampling rate to be simulated, can be float or `derive` to take the sfreq from the sources
 stream_type='EEG'
 # channel_name=['Cz', 'Pz', 'POz']        # if 'all' stream all channels from source, else provide a list of strings e.g. ['C3', 'Cz', 'C4']
 channel_name='all'
+stream_marker=true                      # if true, will also stream markers if source provides them 
+marker_stream_name='mock_EEG_stream'

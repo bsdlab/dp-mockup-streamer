@@ -8,22 +8,19 @@
 #
 #
 # TODOS:
-# - [ ] stream markers alongside
 # - [ ] include streaming from an xdf file
 
 
-from typing import Callable, Any
-from pathlib import Path
-from fire import Fire
-
-import time
-import mne
-import tomllib
-import pylsl
-
 import threading  # necessary to make it accessible via api
+import time
+import tomllib
+from pathlib import Path
+from typing import Any, Callable
 
+import mne
 import numpy as np
+import pylsl
+from fire import Fire
 
 CONF_PATH = "./config/streaming.toml"
 
@@ -32,7 +29,12 @@ class NoFilesFound(FileExistsError):
     pass
 
 
+class EndOfDataError(KeyError):
+    pass
+
+
 def get_config() -> dict:
+    """Load the config file at CONF_PATH into a dict"""
     with open(CONF_PATH, "rb") as f:
         conf = tomllib.load(f)
 
@@ -40,6 +42,7 @@ def get_config() -> dict:
 
 
 def get_loader(source_type: str) -> Callable:
+    """Loader factory, additional loaders will be implemented here"""
     loaders = {"BV": mne.io.read_raw_brainvision, "mne": mne.io.read_raw}
 
     return loaders[source_type]
@@ -60,7 +63,7 @@ def load_random(nchannels: int = 10) -> list[mne.io.BaseRaw]:
 
 
 def load_data(
-    data_source: str, files_pattern: str, source_type: str, **kwargs
+    data_source: str, files_pattern: str, source_type: str
 ) -> list[mne.io.BaseRaw]:
     """
     Use `files_pattern` to glob the path at `data_source` and load with the
@@ -84,6 +87,17 @@ def load_data(
 
 
 def add_bv_ch_info(info: pylsl.StreamInfo, raw: mne.io.BaseRaw):
+    """Add channel meta data to a pylsl.StreamInfo object
+
+    Parameters
+    ----------
+    info : pylsl.StreamInfo
+        info object to add the channel info to
+
+    raw : mne.io.BaseRaw
+        mne raw object to derive the channel names from
+
+    """
     info.desc().append_child_value("manufacturer", "MockupStream")
     chns = info.desc().append_child("channels")
 
@@ -124,21 +138,9 @@ def push_with_log(
     outlet.push_chunk(data, stamp)
 
 
-def run_stream(
-    stop_event: threading.Event = threading.Event(),
-    stream_name: str = "",
-    log_push: bool = False,
-    random_data: bool = False,
-    conf: dict = {},
-    **kwargs,
-) -> int:
-    """Run a mockup stream"""
-
-    if conf == {}:
-        conf = get_config()
-
-    pushfunc = push_with_log if log_push else push_plain
-
+def get_data_and_channel_names(
+    conf: dict, random_data: bool = False
+) -> tuple[list[mne.io.BaseRaw], list[str]]:
     # Prepare data and stream outlets
     if random_data:
         data = load_random()
@@ -156,57 +158,220 @@ def run_stream(
         )
         data = [r.pick_channels(ch_names) for r in data]
 
-    stream_name = (
-        conf["streaming"]["stream_name"] if stream_name == "" else stream_name
-    )
+    return data, ch_names
 
+
+def load_next_block(
+    block_idx: int, data: list[mne.io.BaseRaw]
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+
+    Parameters
+    ----------
+    block_idx : int
+        index of the block to load
+
+    data : list[mne.io.BaseRaw]
+        list of data to stream
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        data array and markers/annotations array as part of the mne.io.BaseRaw
+        which is at data[block_idx]. Note, the markers array is aligned
+        with the data to be selectable with the same slice
+
+    """
+    if block_idx >= len(data):
+        if conf["streaming"]["mode"] == "repeat":
+            block_idx = 0
+        else:
+            raise EndOfDataError(
+                f"All data streamed and {conf['streaming']['mode']=}"
+            )
+
+    print("Fetching next block of data")
+    raw = data[block_idx]
+    raw.load_data()  # note this might need to go into separate concurrent routine to prevent larger lags - [ ] TODO: investigate # noqa
+
+    markers = np.asarray([""] * len(raw.times), dtype="object")
+    ev, evid = mne.events_from_annotations(raw, verbose=False)
+    # invert the map to use the string markers within the marker array
+    imap = {v: k for k, v in evid.items()}
+    markers[ev[:, 0]] = [imap[v] for v in ev[:, 2]]
+
+    return raw.get_data(), markers
+
+
+def init_lsl_outlets(
+    conf: dict,
+    data: list[mne.io.BaseRaw],
+    ch_names: list[str],
+) -> dict[pylsl.StreamOutlet]:
+    outlets = {}
+    # --- the data outlet
     info = pylsl.StreamInfo(
-        name=stream_name,
+        name=conf["streaming"]["stream_name"],
         type=conf["streaming"]["stream_type"],
         channel_count=len(ch_names),
         nominal_srate=conf["streaming"]["sampling_freq"],
     )
     add_channel_info(info, conf, data[0])
-    outlet = pylsl.StreamOutlet(info, 32, 360)
+    outlets["data"] = pylsl.StreamOutlet(info, 32, 360)
+
+    # --- the marker outlet
+    if conf["streaming"]["stream_marker"]:
+        info_mrks = pylsl.StreamInfo(
+            name=conf["streaming"]["marker_stream_name"],
+            type="Markers",
+            channel_count=1,
+            nominal_srate=pylsl.IRREGULAR_RATE,
+            channel_format="string",
+        )
+        outlets["markers"] = pylsl.StreamOutlet(info_mrks)
+    return outlets
+
+
+def push_factory(
+    pushfunc: Callable,
+    stream_makers: bool = False,
+) -> Callable:
+    """Factory function to create a push function with the correct signature
+    Parameters
+    ----------
+    pushfunc : Callable
+        The push function to wrap
+    stream_makers : bool
+        If true, will push markers
+
+    Returns
+    -------
+    Callable
+        The wrapped push function
+    """
+
+    # Prepare two ways of pushing - see wrapper for signature
+    def push_wo_markers(outlets, data, tstamp, markers=[]):
+        pushfunc(outlets["data"], data, tstamp)
+
+    def push_with_markers(outlets, data, tstamp, markers=[]):
+        pushfunc(outlets["data"], data, tstamp)
+
+        # Currently all markers will be bundeled into one tsample. For mockup
+        # this can be ok if the sampling rate of the mockup stream is high
+        if markers != []:
+            for mrk in markers:
+                outlets["markers"].push_sample([mrk], tstamp)
+
+    pfunc = push_wo_markers if not stream_makers else push_with_markers
+
+    def push_wrapper(
+        outlets: dict[pylsl.StreamOutlet],
+        data: np.ndarray,
+        tstamp: float,
+        markers: list = [],
+    ):
+        """Push data to the outlets
+        Parameters
+        ----------
+        outlets : dict[pylsl.StreamOutlet]
+            The outlets to push to, needs a `data` and a `markers` outlet
+        data : np.ndarray
+            The data to push
+        tstamp : float
+            The timestamp of the data
+        markers: list
+            a list of markers
+        """
+        return pfunc(outlets, data, tstamp, markers=markers)
+
+    return push_wrapper
+
+
+def run_stream(
+    stop_event: threading.Event = threading.Event(),
+    stream_name: str = "",
+    log_push: bool = False,
+    random_data: bool = False,
+    conf: dict = {},
+) -> int:
+    """
+
+    Parameters
+    ----------
+    stop_event : threading.Event
+        event used to stop the streaming
+
+    stream_name : str
+        Name of the data stream. This will overwrte the name defined in
+        `./configs/streaming.yaml`
+
+    log_push : bool
+        If true, will print a log message for each push
+
+    random_data : bool
+        If true, will load random data instead of real data
+
+    conf : dict
+        Configuration dictionary. If empty, will load the config specified at
+        CONF_PATH (`./configs/streaming.yaml`).
+
+    Returns
+    -------
+    int
+        returns 0
+
+    """
+    # -- loading config and overwrites if provided to CLI
+    if conf == {}:
+        conf = get_config()
+    if stream_name != "":
+        conf["streaming"]["stream_name"] = stream_name
+
+    data, ch_names = get_data_and_channel_names(conf, random_data)
+
+    if conf["streaming"]["sampling_freq"] == "derive":
+        conf["streaming"]["sampling_freq"] = data[0].info["sfreq"]
+
+    outlets = init_lsl_outlets(conf, data, ch_names)
+
+    pushfunc = push_with_log if log_push else push_plain
+    # add capability to push markers if specified
+    pushfunc = push_factory(pushfunc, conf["streaming"]["stream_marker"])
+
+    # initialize first block of data to stream
+    block_idx = 0
+    data_array, markers = load_next_block(block_idx, data)
 
     # Sending the data
-    print(f"now sending data in {stream_name=}")
+    print(f"Now sending data in {conf['streaming']['stream_name']=}")
     sent_samples = 0
     t_start = pylsl.local_clock()
 
-    srate = conf["streaming"]["sampling_freq"]
-
-    block_idx = 0
-    data_array = data[0].get_data()
-
     while not stop_event.is_set():
         elapsed_time = pylsl.local_clock() - t_start
-        last_new_sample = int(srate * elapsed_time)
+        last_new_sample = int(
+            conf["streaming"]["sampling_freq"] * elapsed_time
+        )
         required_samples = last_new_sample - sent_samples
 
         # check if a new block needs to be loaded
         if last_new_sample > data_array.shape[1]:
             block_idx += 1
-            if block_idx >= len(data) and conf["streaming"]["mode"] != "repeat":
-                block_idx = 0
-            else:
-                break
-
-            print("Fetching next block of data")
-            data[
-                block_idx
-            ].load_data()  # note this might need to go into separate concurrent routine to prevent larger lags - [ ] TODO: investigate # noqa
-            data_array = data[block_idx].get_data()
+            data_array, markers = load_next_block(block_idx, data)
 
         if required_samples > 0:
-            chunk = data_array[
-                :, sent_samples : sent_samples + required_samples
-            ]
+            slc = slice(sent_samples, sent_samples + required_samples)
+            chunk = data_array[:, slc]
+            mchunk = markers[slc]
+
             stamp = pylsl.local_clock()
 
+            # convert numpy to list of lists
             ldata = [list(r) for r in chunk.T]  # n_times x n_channels
 
-            pushfunc(outlet, ldata, stamp)
+            pushfunc(outlets, ldata, stamp, markers=list(mchunk[mchunk != ""]))
+
             sent_samples += required_samples
 
         time.sleep(0.01)
