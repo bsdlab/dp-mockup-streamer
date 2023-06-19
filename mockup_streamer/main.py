@@ -381,5 +381,22 @@ def run_stream(
     return 0
 
 
+def run_mockup_streamer_thread(
+    **kwargs,
+) -> tuple[threading.Thread, threading.Event]:
+    """Run the streaming within a separate thread and have a stop_event"""
+    stop_event = threading.Event()
+    stop_event.clear()
+
+    thread = threading.Thread(
+        target=run_stream,
+        kwargs={"stop_event": stop_event, **kwargs},
+    )
+
+    thread.start()
+
+    return thread, stop_event
+
+
 if __name__ == "__main__":
     Fire(run_stream)

@@ -12,4 +12,4 @@ stream_type='EEG'
 # channel_name=['Cz', 'Pz', 'POz']        # if 'all' stream all channels from source, else provide a list of strings e.g. ['C3', 'Cz', 'C4']
 channel_name='all'
 stream_marker=true                      # if true, will also stream markers if source provides them 
-marker_stream_name='mock_EEG_stream'
+marker_stream_name='mock_EEG_stream_marker'
