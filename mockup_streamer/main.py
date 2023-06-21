@@ -361,10 +361,17 @@ def run_stream(
 
         # check if a new block needs to be loaded
         if last_new_sample > data_array.shape[1]:
+            # restart counting as a new file will be openened
+            t_start = pylsl.local_clock()
             block_idx += 1
             data_array, markers = load_next_block(
                 block_idx, data, streaming_mode=conf["streaming"]["mode"]
             )
+
+            # restart counting - if not specified to repeat, load_next_block
+            # will have thrown an error
+            if block_idx >= len(data):
+                block_idx == 0
 
         if required_samples > 0:
             slc = slice(sent_samples, sent_samples + required_samples)
