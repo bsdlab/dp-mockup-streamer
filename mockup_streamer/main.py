@@ -363,6 +363,8 @@ def run_stream(
         if last_new_sample > data_array.shape[1]:
             # restart counting as a new file will be openened
             t_start = pylsl.local_clock()
+            sent_samples = 0
+
             block_idx += 1
             data_array, markers = load_next_block(
                 block_idx, data, streaming_mode=conf["streaming"]["mode"]
