@@ -162,7 +162,7 @@ def get_data_and_channel_names(
 
 
 def load_next_block(
-    block_idx: int, data: list[mne.io.BaseRaw]
+    block_idx: int, data: list[mne.io.BaseRaw], streaming_mode: str = ""
 ) -> tuple[np.ndarray, np.ndarray]:
     """
 
@@ -174,6 +174,10 @@ def load_next_block(
     data : list[mne.io.BaseRaw]
         list of data to stream
 
+    streaming_mode : str
+        "repeat" or "" (default), if "repeat" it will loop over the files again
+        after all data was streamed
+
     Returns
     -------
     tuple[np.ndarray, np.ndarray]
@@ -183,12 +187,10 @@ def load_next_block(
 
     """
     if block_idx >= len(data):
-        if conf["streaming"]["mode"] == "repeat":
+        if streaming_mode == "repeat":
             block_idx = 0
         else:
-            raise EndOfDataError(
-                f"All data streamed and {conf['streaming']['mode']=}"
-            )
+            raise EndOfDataError(f"All data streamed and {streaming_mode=}")
 
     print("Fetching next block of data")
     raw = data[block_idx]
@@ -341,7 +343,9 @@ def run_stream(
 
     # initialize first block of data to stream
     block_idx = 0
-    data_array, markers = load_next_block(block_idx, data)
+    data_array, markers = load_next_block(
+        block_idx, data, streaming_mode=conf["streaming"]["mode"]
+    )
 
     # Sending the data
     print(f"Now sending data in {conf['streaming']['stream_name']=}")
@@ -358,7 +362,9 @@ def run_stream(
         # check if a new block needs to be loaded
         if last_new_sample > data_array.shape[1]:
             block_idx += 1
-            data_array, markers = load_next_block(block_idx, data)
+            data_array, markers = load_next_block(
+                block_idx, data, streaming_mode=conf["streaming"]["mode"]
+            )
 
         if required_samples > 0:
             slc = slice(sent_samples, sent_samples + required_samples)
