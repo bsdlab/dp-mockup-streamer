@@ -119,6 +119,7 @@ def add_channel_info(info: pylsl.StreamInfo, conf: dict, data: Any):
 
     info_add_funcs = {
         "BV": add_bv_ch_info,
+        "mne": add_bv_ch_info,
         "random": add_bv_ch_info,  # random did load to mne.io.RawArray -> the meta data is comparable to the BV load. # noqa
     }
 
@@ -200,7 +201,9 @@ def load_next_block(
     ev, evid = mne.events_from_annotations(raw, verbose=False)
     # invert the map to use the string markers within the marker array
     imap = {v: k for k, v in evid.items()}
-    markers[ev[:, 0]] = [imap[v] for v in ev[:, 2]]
+
+    # ev will have the time stamps with raw.first_samp included -> remove to align with the data as indexed from one # noqa
+    markers[ev[:, 0] - raw.first_samp] = [imap[v] for v in ev[:, 2]]
 
     return raw.get_data(), markers
 
@@ -389,7 +392,7 @@ def run_stream(
 
             sent_samples += required_samples
 
-        time.sleep(0.01)
+        time.sleep(0.001)
 
     print("Finished")
 

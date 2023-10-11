@@ -1,7 +1,7 @@
 [sources]
-data_source='../test_data/'                         # Use absolute paths
-source_type='BV'                        # this will specify the loader that is loaded
-files_pattern='*.vhdr'                  # the files to check
+data_source='../../../data/processed/'                         # Use absolute paths
+source_type='mne'                        # this will specify the loader that is loaded
+files_pattern='*concatenated_raw.fif'                  # the files to check
 
 [streaming]
 stream_name='mock_EEG_stream'
