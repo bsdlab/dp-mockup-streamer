@@ -162,6 +162,23 @@ def get_data_and_channel_names(
     return data, ch_names
 
 
+def sleep_s(s: float):
+    """Sleep for s seconds."""
+
+    start = time.perf_counter_ns()
+    if s > 0.1:
+        # If not yet reached 90% of the sleep duration, sleep in 10% increments
+        # The 90% threshold is somewhat arbitrary but when testing intervals
+        # with 1 ms to 500ms this produced very accurate results with deviation
+        # less than 0.1% of the desired target value. On Mac M1 with python 3.11
+        while time.perf_counter_ns() - start < (s * 1e9 * 0.9):
+            time.sleep(s / 10)
+
+    # Sleep for the remaining time
+    while time.perf_counter_ns() - start < s * 1e9:
+        pass
+
+
 def load_next_block(
     block_idx: int, data: list[mne.io.BaseRaw], streaming_mode: str = ""
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -392,7 +409,7 @@ def run_stream(
 
             sent_samples += required_samples
 
-        time.sleep(0.001)
+        sleep_s(0.001)
 
     print("Finished")
 
