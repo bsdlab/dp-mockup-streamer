@@ -129,14 +129,16 @@ def add_channel_info(info: pylsl.StreamInfo, conf: dict, data: Any):
 def push_plain(
     outlet: pylsl.StreamOutlet, data: list[list[float]], stamp: float
 ):
-    outlet.push_chunk(data, stamp)
+    # outlet.push_chunk(data, stamp)
+    outlet.push_chunk(data)
 
 
 def push_with_log(
     outlet: pylsl.StreamOutlet, data: list[list[float]], stamp: float
 ):
     print(f"Pushing n={len(data)} samples @ {stamp}")
-    outlet.push_chunk(data, stamp)
+    # outlet.push_chunk(data, stamp)
+    outlet.push_chunk(data)
 
 
 def get_data_and_channel_names(
