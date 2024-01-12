@@ -5,10 +5,6 @@
 # date: 20220902
 #
 # Stream from files defined in the config/streaming.toml
-#
-#
-# TODOS:
-# - [ ] include streaming from an xdf file
 
 
 import threading  # necessary to make it accessible via api
@@ -21,6 +17,8 @@ import mne
 import numpy as np
 import pylsl
 from fire import Fire
+
+from mockup_streamer.utils.logging import logger
 
 CONF_PATH = "./config/streaming.toml"
 
@@ -145,6 +143,7 @@ def get_data_and_channel_names(
     conf: dict, random_data: bool = False
 ) -> tuple[list[mne.io.BaseRaw], list[str]]:
     # Prepare data and stream outlets
+    logger.debug(f"Loading data >> {random_data=}")
     if random_data:
         data = load_random()
         ch_names = data[0].ch_names  # random is always all
