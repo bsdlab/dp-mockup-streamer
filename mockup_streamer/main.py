@@ -49,7 +49,7 @@ def load_random(
     raws = []
 
     for i in range(10):
-        data = np.random.randn(nchannels, sfreq * 1000)
+        data = np.random.randn(nchannels, sfreq * 100)
         info = mne.create_info(
             [f"ch_{i}" for i in range(nchannels)], sfreq, ch_types="eeg"
         )
@@ -138,12 +138,15 @@ def push_with_log(
 
 
 def get_data_and_channel_names(
-    conf: dict, random_data: bool = False, random_sfreq: float = 100
+    conf: dict,
+    random_data: bool = False,
+    random_sfreq: float = 100,
+    random_nchannels: int = 10,
 ) -> tuple[list[mne.io.BaseRaw], list[str]]:
     # Prepare data and stream outlets
     logger.debug(f"Loading data >> {random_data=}")
     if random_data:
-        data = load_random(sfreq=random_sfreq)
+        data = load_random(sfreq=random_sfreq, nchannels=random_nchannels)
         ch_names = data[0].ch_names  # random is always all
         conf["sources"]["source_type"] = "random"
 
@@ -260,6 +263,7 @@ def push_factory(
     random_data_markers_s: float = 0,
 ) -> Callable:
     """Factory function to create a push function with the correct signature
+
     Parameters
     ----------
     pushfunc : Callable
@@ -340,6 +344,7 @@ def run_stream(
     random_data: bool = False,
     random_sfreq: float = 100,
     random_data_markers_s: float = 0,
+    random_nchannels: int = 10,
     conf: dict = {},
 ) -> int:
     """
@@ -386,7 +391,10 @@ def run_stream(
     print("=" * 80)
 
     data, ch_names = get_data_and_channel_names(
-        conf, random_data, random_sfreq=random_sfreq
+        conf,
+        random_data,
+        random_sfreq=random_sfreq,
+        random_nchannels=random_nchannels,
     )
 
     if conf["streaming"]["sampling_freq"] == "derive":
