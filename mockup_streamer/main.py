@@ -1,14 +1,4 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# author: Matthias Dold
-# date: 20220902
-#
 # Stream from files defined in the config/streaming.toml
-#
-#
-# TODOS:
-# - [ ] include streaming from an xdf file
 
 
 import threading  # necessary to make it accessible via api
@@ -22,7 +12,11 @@ import numpy as np
 import pylsl
 from fire import Fire
 
+from mockup_streamer.utils.logging import logger
+
 CONF_PATH = "./config/streaming.toml"
+
+MRK_CNT = 0
 
 
 class NoFilesFound(FileExistsError):
@@ -48,14 +42,16 @@ def get_loader(source_type: str) -> Callable:
     return loaders[source_type]
 
 
-def load_random(nchannels: int = 10) -> list[mne.io.BaseRaw]:
+def load_random(
+    nchannels: int = 10, sfreq: float = 100
+) -> list[mne.io.BaseRaw]:
     """Return a few random raw objects to loop through"""
     raws = []
 
     for i in range(10):
-        data = np.random.randn(nchannels, 100000)
+        data = np.random.randn(nchannels, sfreq * 100)
         info = mne.create_info(
-            [f"ch_{i}" for i in range(nchannels)], 100, ch_types="eeg"
+            [f"ch_{i}" for i in range(nchannels)], sfreq, ch_types="eeg"
         )
         raws.append(mne.io.RawArray(data, info))
 
@@ -129,22 +125,28 @@ def add_channel_info(info: pylsl.StreamInfo, conf: dict, data: Any):
 def push_plain(
     outlet: pylsl.StreamOutlet, data: list[list[float]], stamp: float
 ):
-    outlet.push_chunk(data, stamp)
+    # outlet.push_chunk(data, stamp)
+    outlet.push_chunk(data)
 
 
 def push_with_log(
     outlet: pylsl.StreamOutlet, data: list[list[float]], stamp: float
 ):
     print(f"Pushing n={len(data)} samples @ {stamp}")
-    outlet.push_chunk(data, stamp)
+    # outlet.push_chunk(data, stamp)
+    outlet.push_chunk(data)
 
 
 def get_data_and_channel_names(
-    conf: dict, random_data: bool = False
+    conf: dict,
+    random_data: bool = False,
+    random_sfreq: float = 100,
+    random_nchannels: int = 10,
 ) -> tuple[list[mne.io.BaseRaw], list[str]]:
     # Prepare data and stream outlets
+    logger.debug(f"Loading data >> {random_data=}")
     if random_data:
-        data = load_random()
+        data = load_random(sfreq=random_sfreq, nchannels=random_nchannels)
         ch_names = data[0].ch_names  # random is always all
         conf["sources"]["source_type"] = "random"
 
@@ -157,6 +159,7 @@ def get_data_and_channel_names(
             if conf["streaming"]["channel_name"] == "all"
             else conf["streaming"]["channel_name"]
         )
+
         data = [r.pick_channels(ch_names) for r in data]
 
     return data, ch_names
@@ -256,15 +259,19 @@ def init_lsl_outlets(
 
 def push_factory(
     pushfunc: Callable,
-    stream_makers: bool = False,
+    stream_markers: bool = False,
+    random_data_markers_s: float = 0,
 ) -> Callable:
     """Factory function to create a push function with the correct signature
+
     Parameters
     ----------
     pushfunc : Callable
         The push function to wrap
-    stream_makers : bool
+    stream_markers : bool
         If true, will push markers
+    random_data_markers_s : foat
+        If != 0 will add markers to the random data stream every every <value>s
 
     Returns
     -------
@@ -273,10 +280,10 @@ def push_factory(
     """
 
     # Prepare two ways of pushing - see wrapper for signature
-    def push_wo_markers(outlets, data, tstamp, markers=[]):
+    def push_wo_markers(outlets, data, tstamp, markers=[], elapsed_time=0):
         pushfunc(outlets["data"], data, tstamp)
 
-    def push_with_markers(outlets, data, tstamp, markers=[]):
+    def push_with_markers(outlets, data, tstamp, markers=[], elapsed_time=0):
         pushfunc(outlets["data"], data, tstamp)
 
         # Currently all markers will be bundeled into one tsample. For mockup
@@ -285,13 +292,31 @@ def push_factory(
             for mrk in markers:
                 outlets["markers"].push_sample([mrk], tstamp)
 
-    pfunc = push_wo_markers if not stream_makers else push_with_markers
+    def push_random_with_markers(
+        outlets, data, tstamp, markers=[], elapsed_time=0
+    ):
+        pushfunc(outlets["data"], data, tstamp)
+
+        global MRK_CNT
+
+        mrk_cnt = elapsed_time // random_data_markers_s
+        if mrk_cnt > MRK_CNT:
+            outlets["markers"].push_sample([str(mrk_cnt)], tstamp)
+            MRK_CNT = mrk_cnt
+
+    if random_data_markers_s != 0:
+        pfunc = push_random_with_markers
+    elif stream_markers:
+        pfunc = push_with_markers
+    else:
+        pfunc = push_wo_markers
 
     def push_wrapper(
         outlets: dict[pylsl.StreamOutlet],
         data: np.ndarray,
         tstamp: float,
         markers: list = [],
+        elapsed_time: float = 0,
     ):
         """Push data to the outlets
         Parameters
@@ -305,7 +330,9 @@ def push_factory(
         markers: list
             a list of markers
         """
-        return pfunc(outlets, data, tstamp, markers=markers)
+        return pfunc(
+            outlets, data, tstamp, markers=markers, elapsed_time=elapsed_time
+        )
 
     return push_wrapper
 
@@ -315,6 +342,9 @@ def run_stream(
     stream_name: str = "",
     log_push: bool = False,
     random_data: bool = False,
+    random_sfreq: float = 100,
+    random_data_markers_s: float = 0,
+    random_nchannels: int = 10,
     conf: dict = {},
 ) -> int:
     """
@@ -334,6 +364,12 @@ def run_stream(
     random_data : bool
         If true, will load random data instead of real data
 
+    random_sfreq : float
+        Sampling frequency of the random data
+
+    random_data_markers_s : float
+        if != 0 will add markers to the random data stream every every <value>s
+
     conf : dict
         Configuration dictionary. If empty, will load the config specified at
         CONF_PATH (`./configs/streaming.yaml`).
@@ -350,16 +386,28 @@ def run_stream(
     if stream_name != "":
         conf["streaming"]["stream_name"] = stream_name
 
-    data, ch_names = get_data_and_channel_names(conf, random_data)
+    print("=" * 80)
+    print(conf)
+    print("=" * 80)
+
+    data, ch_names = get_data_and_channel_names(
+        conf,
+        random_data,
+        random_sfreq=random_sfreq,
+        random_nchannels=random_nchannels,
+    )
 
     if conf["streaming"]["sampling_freq"] == "derive":
         conf["streaming"]["sampling_freq"] = data[0].info["sfreq"]
-
     outlets = init_lsl_outlets(conf, data, ch_names)
 
     pushfunc = push_with_log if log_push else push_plain
-    # add capability to push markers if specified
-    pushfunc = push_factory(pushfunc, conf["streaming"]["stream_marker"])
+    # add capability to push markers if specified by wrapping pushfunc
+    pushfunc = push_factory(
+        pushfunc,
+        conf["streaming"]["stream_marker"],
+        random_data_markers_s=random_data_markers_s,
+    )
 
     # initialize first block of data to stream
     block_idx = 0
@@ -405,7 +453,13 @@ def run_stream(
             # convert numpy to list of lists
             ldata = [list(r) for r in chunk.T]  # n_times x n_channels
 
-            pushfunc(outlets, ldata, stamp, markers=list(mchunk[mchunk != ""]))
+            pushfunc(
+                outlets,
+                ldata,
+                stamp,
+                markers=list(mchunk[mchunk != ""]),
+                elapsed_time=elapsed_time,
+            )
 
             sent_samples += required_samples
 

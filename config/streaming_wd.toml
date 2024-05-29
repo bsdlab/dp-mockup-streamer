@@ -1,15 +1,15 @@
 [sources]
 data_source='<path/to/fif/files>'                         # Use absolute paths
 source_type='mne'                        # this will specify the loader that is loaded
-files_pattern='*concatenated_raw.fif'                  # the files to check
+files_pattern='*concatenated_Fp1_raw.fif'                  # the files to check
 
 [streaming]
-stream_name='mock_EEG_stream_Fp1'
+stream_name='mock_EEG_stream_wd'
 mode='repeat'                           # repeat or once
 type='regular'                          # regular or irregular
 sampling_freq='derive'                  # sampling rate to be simulated, can be float or `derive` to take the sfreq from the sources
 stream_type='EEG'
-# channel_name=['Fp1', 'Fp2']        # if 'all' stream all channels from source, else provide a list of strings e.g. ['C3', 'Cz', 'C4']
-channel_name='all'
+channel_name=['Fp1']        # if 'all' stream all channels from source, else provide a list of strings e.g. ['C3', 'Cz', 'C4']
+# channel_name='all'
 stream_marker=true                      # if true, will also stream markers if source provides them 
-marker_stream_name='mock_EEG_stream_marker_Fp1'
+marker_stream_name='mock_EEG_stream_marker_wd'
