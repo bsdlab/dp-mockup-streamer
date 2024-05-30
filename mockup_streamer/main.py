@@ -81,7 +81,9 @@ class MockupStream:
         if self.markers is not None:
             default_name = self.cfg["stream_name"] + "_markers"
             self.init_outlet_mrk(
-                self.cfg["markers"].get("marker_stream_name", default_name)
+                self.cfg.get("markers", {}).get(
+                    "marker_stream_name", default_name
+                )
             )
 
     def init_buffer(self, data, markers: np.ndarray | None = None):
@@ -125,8 +127,8 @@ class MockupStream:
 
             logger.debug("Loading new random data")
             data = np.random.randn(
-                self.n_channels,
                 self.sfreq * self.cfg.get("pre_buffer_s", 300),
+                self.n_channels,
             )
 
             markers = None
@@ -198,16 +200,10 @@ class MockupStream:
 
     def push_markers(self, idx_from: int, idx_to: int):
         """Check if there is a marker within the index range and push if yes"""
-        msk = (self.mrks[:, 0] > idx_from) & (self.mrks[:, 0] < idx_to)
+        msk = (self.markers[:, 0] > idx_from) & (self.markers[:, 0] < idx_to)
         if msk.any():
-            for mrk in self.mrks[msk, 1]:
+            for mrk in self.markers[msk, 1]:
                 self.outlet_mrk.push_sample([mrk])
-
-    def __del__(self):
-        if self.outlet is not None:
-            self.outlet.close_stream()
-        if self.outlet_mrk is not None:
-            self.outlet_mrk.close_stream()
 
 
 def load_data(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray | None]:
@@ -219,7 +215,7 @@ def load_data(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray | None]:
         ".xdf": load_xdf,
     }
 
-    data, markers, sfreq = loaders[fp.suffix](fp, **cfg)
+    data, markers, sfreq = loaders[fp.suffix](fp, cfg)
     markers = None if len(markers) == 0 else markers
 
     return data, markers, sfreq
@@ -380,21 +376,29 @@ def get_data_and_channel_names(
 
 def glob_path_to_path_list(cfg: dict) -> list[Path]:
 
-    fp_str = cfg.get("file_path", "")
-    if fp_str == "":
-        files = []
+    fp = cfg.get("file_path", "")
+    if isinstance(fp, list):
+        return [Path(f) for f in fp]
     else:
-        fp = Path(fp_str)
-        sep = "\\" if isinstance(fp, PureWindowsPath) else "/"
+        if fp == "":
+            files = []
+        else:
+            fp = Path(fp)
+            sep = "\\" if isinstance(fp, PureWindowsPath) else "/"
 
-        # index of where the glob starts
-        idx = ["*" in s for s in str(fp).split(sep)].index(True)
+            # single file -> cast to list
+            if "*" not in str(fp):
+                files = [fp]
+            else:  # glob
 
-        files = list(
-            Path(f"{sep}".join(fp.parts[: idx - 1])).rglob(
-                f"{sep}".join(fp.parts[idx - 1 :])
-            )
-        )
+                # index of where the glob starts
+                idx = ["*" in s for s in str(fp).split(sep)].index(True)
+
+                files = list(
+                    Path(f"{sep}".join(fp.parts[: idx - 1])).rglob(
+                        f"{sep}".join(fp.parts[idx - 1 :])
+                    )
+                )
 
     return files
 
@@ -451,7 +455,7 @@ def run_stream(
             # internal sampling frequency
             ms.push()
 
-        sleep_s(dt * 0.9)
+        sleep_s(dt)
     return 0
 
 

@@ -8,25 +8,12 @@ As for all Dareplane modules, you can have this run standalone, via a TCP server
 
 ## Config
 
-The configuration options can be found under `./config` in the `streaming.toml` or `streaming_docker.toml` depending whether you plan to run as a docker container or not. For most use cases, running in a `shell` is sufficient and should be the prefered way.
+The configuration options can be found under `./config` in the `streams.toml` or `streaming_docker.toml` depending whether you plan to run as a docker container or not. For most use cases, running in a `shell` is sufficient and should be the prefered way.
+
 ### Config options
 
 ```toml
-[sources]
-data_source='<PATH/TO/DATAFOLDER>'                         # Path to a folder containing data files (mne '*.fif' or brain vision '*.eeg, *.vhdr, *.vmrk' )
-source_type='mne'                                          # this will specify the loader that is loaded - 'mne' or 'BV'
-files_pattern='*concatenated_Fp1_raw.fif'                  # a pattern to look for. If multiple files are found, the streamer will provide their data one after another.
 
-[streaming]
-stream_name='mock_EEG_stream'
-mode='repeat'                               # repeat or once - if every file should be streamed just once or if the mockup streamer should repeat after finishing the last file.
-type='regular'                              # regular or irregular - the basic outlet type
-sampling_freq='derive'                      # sampling rate to be simulated, can be float or `derive` to take the sfreq from the sources
-stream_type='EEG'                           # meta data for LSL
-channel_name=['Fp1']                        # if 'all' stream all channels from source, else provide a list of strings e.g. ['C3', 'Cz', 'C4']
-# channel_name='all'
-stream_marker=true                          # if true, will also stream markers if source provides them 
-marker_stream_name='mock_EEG_stream_marker'
 ```
 
 ### Running in a shell
@@ -43,7 +30,15 @@ def run_stream(stop_event: threading.Event = threading.Event(),
                **kwargs) -> int:
 ```
 
-So you can start the mockup stream by simply calling `python -m mockup_streamer.main`, `python -m mockup_streamer.main --stream_name="my_stream"` to overwrite the stream name, which is otherwise configured under `./config/streaming.toml`.
+This will run the standard configuration located in `./config/streams.toml`.
+
+To simply spawn a quick stream of random data with CLI control over the parameters, use this:
+
+```bash
+python -m mockup_streamer.random_cli
+# or this for help about parameters
+python -m mockup_streamer.random_cli --help
+```
 
 #### As TCP server
 
