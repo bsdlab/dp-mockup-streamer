@@ -1,10 +1,8 @@
 # Stream from files defined in the config/streaming.toml
 
 import threading  # necessary to make it accessible via api
-import time
 import tomllib
 from pathlib import Path, PureWindowsPath
-from typing import Any, Callable
 
 import mne
 import numpy as np
@@ -35,10 +33,10 @@ class MockupStream:
         Name of the stream
     sfreq : float
         Target sampling frequency
-    info : pylsl.StreamInfo
-        pylsl StreamInfo object used to initialize the pylsl StreamOutlet
     outlet : pylsl.StreamOutlet
         pylsl StreamOutlet object data is pushed to
+    outlet_mrk : pylsl.StreamOutlet | None
+        pylsl StreamOutlet object markers are pushed to
     buffer : np.ndarray
         The pre buffered data to be streamed from
     buffer_i : int
@@ -53,6 +51,7 @@ class MockupStream:
 
     def __init__(
         self,
+        name: str,
         cfg: dict,
         files: list[Path] = [],
     ):
@@ -63,17 +62,27 @@ class MockupStream:
             if provided, data will be streamed from files, else random data
             will be generateed
         """
+        self.name = name
         self.cfg = cfg
         self.files = files  # can be used if multiple files should be
         self.file_i = 0
         self.outlet = None
         self.outlet_mrk = None  # will be populated once data is loaded and contains markers or if specified for random data  # noqa
         self.sfreq = cfg["sampling_freq"]
+        self.n_channels = 0  # will be set once data is loaded
 
         self.load_next_data()
 
         # LSL - init after first data is loaded, as sfreq might be derived
-        self.init_outlet(cfg)
+        self.init_outlet()
+
+        # after loading, we know if there is markers in the file, if yes
+        # create a marker stream
+        if self.markers is not None:
+            default_name = self.cfg["stream_name"] + "_markers"
+            self.init_outlet_mrk(
+                self.cfg["markers"].get("marker_stream_name", default_name)
+            )
 
     def init_buffer(self, data, markers: np.ndarray | None = None):
         self.buffer = data
@@ -84,19 +93,17 @@ class MockupStream:
 
     def init_outlet(self):
 
-        info = (
-            pylsl.StreamInfo(
-                self.cfg["stream_name"],
-                self.cfg.get("stream_type", "EEG"),
-                self.cfg["n_channels"],
-                self.sfreq,
-            ),
+        info = pylsl.StreamInfo(
+            self.cfg["stream_name"],
+            self.cfg.get("stream_type", "EEG"),
+            self.n_channels,
+            self.sfreq,
         )
 
         self.info = info
         self.outlet = pylsl.StreamOutlet(self.info)
 
-    def init_outlet_mrk(self, name: str, sfreq: float):
+    def init_outlet_mrk(self, name: str):
         info = pylsl.StreamInfo(
             name,
             "Markers",
@@ -114,11 +121,11 @@ class MockupStream:
 
         # random
         if self.files == []:
+            self.n_channels = self.cfg["n_channels"]
 
-            self.sfreq = self.cfg["sfreq"]
             logger.debug("Loading new random data")
             data = np.random.randn(
-                self.cfg["nchannels"],
+                self.n_channels,
                 self.sfreq * self.cfg.get("pre_buffer_s", 300),
             )
 
@@ -138,6 +145,10 @@ class MockupStream:
         else:
             fl = self.files[self.file_i]
             data, markers, sfreq = load_data(fl, self.cfg)
+            self.n_channels = data.shape[1]
+
+            # Here could be an assert statement to check if an existing outlet
+            # matches number of channels
 
             if self.sfreq == "derive":
                 self.sfreq = sfreq
@@ -160,14 +171,6 @@ class MockupStream:
 
         # put data to buffer and start indexing from zero
         self.init_buffer(data, markers=markers)
-
-        # after loading, we know if there is markers in the file, if yes
-        # create a marker stream
-        if markers:
-            default_name = self.cfg["stream_name"] + "_markers"
-            self.init_outlet_mrk(
-                self.cfg["markers"].get("marker_stream_name", default_name)
-            )
 
     def push(self):
         n_required = (
@@ -200,14 +203,20 @@ class MockupStream:
             for mrk in self.mrks[msk, 1]:
                 self.outlet_mrk.push_sample([mrk])
 
+    def __del__(self):
+        if self.outlet is not None:
+            self.outlet.close_stream()
+        if self.outlet_mrk is not None:
+            self.outlet_mrk.close_stream()
+
 
 def load_data(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray | None]:
 
     # load depending on suffix
     loaders = {
-        "vhdr": load_bv,
-        "fif": load_mne,
-        "xdf": load_xdf,
+        ".vhdr": load_bv,
+        ".fif": load_mne,
+        ".xdf": load_xdf,
     }
 
     data, markers, sfreq = loaders[fp.suffix](fp, **cfg)
@@ -216,18 +225,20 @@ def load_data(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray | None]:
     return data, markers, sfreq
 
 
-def load_bv(fp: Path, **kwargs) -> tuple[np.ndarray, np.ndarray, float]:
+def load_bv(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray, float]:
     """Load for brainvision files"""
     raw = mne.io.read_raw_brainvision(fp, preload=True)
-    data, markers = mne_raw_to_data_and_markers(raw)
+
+    data, markers = mne_raw_to_data_and_markers(raw, cfg)
 
     return data, markers, raw.info["sfreq"]
 
 
-def load_mne(fp: Path, **kwargs) -> tuple[np.ndarray, np.ndarray, float]:
+def load_mne(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray, float]:
     """Load for mne/fif files"""
     raw = mne.io.read_raw(fp, preload=True)
-    data, markers = mne_raw_to_data_and_markers(raw)
+
+    data, markers = mne_raw_to_data_and_markers(raw, cfg)
 
     return data, markers, raw.info["sfreq"]
 
@@ -290,8 +301,12 @@ def load_xdf(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray, float]:
 
 
 def mne_raw_to_data_and_markers(
-    raw: mne.io.BaseRaw,
+    raw: mne.io.BaseRaw, cfg: dict
 ) -> tuple[np.ndarray, np.ndarray]:
+
+    # Limit to selected channels
+    if cfg.get("select_channels", "") != "":
+        raw.pick_channels(cfg["select_channels"])
 
     # Use the keys in a marker array
     ev, evid = mne.events_from_annotations(raw, verbose=False)
@@ -410,95 +425,33 @@ def run_stream(
     # Initialize streams as specified - first random streams
     streams = []
     for sname, scfg in conf.get("random", {}).items():
-        streams += MockupStream(name=sname, cfg=scfg)
+        streams.append(MockupStream(name=sname, cfg=scfg))
 
     # init streams from files
     for sname, scfg in conf.get("files", {}).items():
         files = glob_path_to_path_list(scfg)
-        streams += MockupStream(name=sname, cfg=scfg, files=files)
+        streams.append(MockupStream(name=sname, cfg=scfg, files=files))
 
-    #
-    # print("=" * 80)
-    # print(conf)
-    # print("=" * 80)
-    #
-    # data, ch_names = get_data_and_channel_names(
-    #     conf,
-    #     random_data,
-    #     random_sfreq=random_sfreq,
-    #     random_nchannels=random_nchannels,
-    # )
-    #
-    # if conf["streaming"]["sampling_freq"] == "derive":
-    #     conf["streaming"]["sampling_freq"] = data[0].info["sfreq"]
-    # outlets = init_lsl_outlets(conf, data, ch_names)
-    #
-    # pushfunc = push_with_log if log_push else push_plain
-    # # add capability to push markers if specified by wrapping pushfunc
-    # pushfunc = push_factory(
-    #     pushfunc,
-    #     conf["streaming"]["stream_marker"],
-    #     random_data_markers_s=random_data_markers_s,
-    # )
-    #
-    # # initialize first block of data to stream
-    # block_idx = 0
-    # data_array, markers = load_next_block(
-    #     block_idx, data, streaming_mode=conf["streaming"]["mode"]
-    # )
-    #
-    # # Sending the data
-    # print(f"Now sending data in {conf['streaming']['stream_name']=}")
-    # sent_samples = 0
-    # t_start = pylsl.local_clock()
-    #
-    # while not stop_event.is_set():
-    #     elapsed_time = pylsl.local_clock() - t_start
-    #     last_new_sample = int(
-    #         conf["streaming"]["sampling_freq"] * elapsed_time
-    #     )
-    #     required_samples = last_new_sample - sent_samples
-    #
-    #     # check if a new block needs to be loaded
-    #     if last_new_sample > data_array.shape[1]:
-    #         # restart counting as a new file will be openened
-    #         t_start = pylsl.local_clock()
-    #         sent_samples = 0
-    #
-    #         block_idx += 1
-    #         data_array, markers = load_next_block(
-    #             block_idx, data, streaming_mode=conf["streaming"]["mode"]
-    #         )
-    #
-    #         # restart counting - if not specified to repeat, load_next_block
-    #         # will have thrown an error
-    #         if block_idx >= len(data):
-    #             block_idx == 0
-    #
-    #     if required_samples > 0:
-    #         slc = slice(sent_samples, sent_samples + required_samples)
-    #         chunk = data_array[:, slc]
-    #         mchunk = markers[slc]
-    #
-    #         stamp = pylsl.local_clock()
-    #
-    #         # convert numpy to list of lists
-    #         ldata = [list(r) for r in chunk.T]  # n_times x n_channels
-    #
-    #         pushfunc(
-    #             outlets,
-    #             ldata,
-    #             stamp,
-    #             markers=list(mchunk[mchunk != ""]),
-    #             elapsed_time=elapsed_time,
-    #         )
-    #
-    #         sent_samples += required_samples
-    #
-    #     sleep_s(0.001)
-    #
-    # print("Finished")
-    #
+    # collect stream names
+    stream_names = [s.outlet.get_info().name() for s in streams] + [
+        s.outlet_mrk.get_info().name()
+        for s in streams
+        if s.outlet_mrk is not None
+    ]
+
+    logger.debug(f"Initalized {len(stream_names)} streams - {stream_names}")
+
+    # find fastest sampling rate
+    sfastest = max([s.sfreq for s in streams])
+    dt = 1 / sfastest
+
+    while not stop_event.is_set():
+        for ms in streams:
+            # push is only sending samples if required as tracked by the
+            # internal sampling frequency
+            ms.push()
+
+        sleep_s(dt * 0.9)
     return 0
 
 

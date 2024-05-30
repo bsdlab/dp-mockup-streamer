@@ -25,8 +25,7 @@
   type='regular'                          # regular or irregular
   sampling_freq='derive'                  # sampling rate to be simulated, can be float or `derive` to take the sfreq from the sources. This can be used to speed up the replay or slow it down
   stream_type='EEG'                       # Can be any string, but LSL encourages to stick to common types
-# channel_name=['Fp1', 'Fp2']        # if 'all' stream all channels from source, else provide a list of strings e.g. ['C3', 'Cz', 'C4']
-  channel_name='all'
+  # select_channels=['Fp1', 'Fp2']        # list of strings e.g. ['C3', 'Cz', 'C4'] to select specific channels only
 
 [files.file1.markers]
   marker_stream_name='mock_EEG_stream_marker_Fp1'
