@@ -29,3 +29,4 @@ termcolor==2.3.0
 tqdm==4.65.0
 ujson==5.8.0
 urllib3==2.0.3
+pyxdf
