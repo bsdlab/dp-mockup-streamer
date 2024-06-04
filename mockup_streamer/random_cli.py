@@ -1,8 +1,9 @@
 # Expose a few parameters usually accessible via config as a CLI
-from dareplane_utils.general.time import sleep_s
+import threading
+
 from fire import Fire
 
-from mockup_streamer.main import MockupStream
+from mockup_streamer.main import run_random
 
 
 def cli(
@@ -38,23 +39,16 @@ def cli(
 
     """
     cfg = dict(
-        sampling_freq=sfreq,
+        sfreq=sfreq,
         n_channels=n_channels,
         pre_buffer_s=pre_buffer_s,
         stream_name=stream_name,
-        markers=dict(t_interval_s=markers_t_s, values=marker_values),
+        markers_t_s=markers_t_s,
+        marker_values=marker_values,
     )
-
-    streamer = MockupStream(name="test", cfg=cfg)
-    dt = 1 / sfreq
-
-    print("=" * 80)
-    print(f"Starting stream: {stream_name}")
-    print("=" * 80)
-
-    while True:
-        sleep_s(dt)
-        streamer.push()
+    stop_event = threading.Event()
+    stop_event.clear()
+    _ = run_random(stop_event, **cfg)
 
 
 if __name__ == "__main__":

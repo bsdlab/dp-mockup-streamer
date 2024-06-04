@@ -459,15 +459,74 @@ def run_stream(
     return 0
 
 
+def run_random(
+    stop_event: threading.Event,
+    n_channels: int = 10,
+    sfreq: int = 100,
+    pre_buffer_s: int = 300,
+    stream_name: str = "mockup_random",
+    markers_t_s: int = 1,
+    marker_values: list = ["a", "b", "c"],
+) -> int:
+    """A simple CLI to spawn an LSL mockup stream with random data
+
+    Parameters
+    ----------
+    stop_event : threading.Event
+        event used to stop the streaming
+    n_channels : int
+        number of channels
+
+    sfreq : int
+        sampling frequency
+
+    pre_buffer_s : int
+        number of samples to be pre-generated, after streaming, another
+        set will be generated
+
+    stream_name : str
+        name of the stream
+
+    markers_t_s : int
+        time interval of markers
+
+    marker_values : list
+        values of markers
+
+    """
+    cfg = dict(
+        sampling_freq=sfreq,
+        n_channels=n_channels,
+        pre_buffer_s=pre_buffer_s,
+        stream_name=stream_name,
+        markers=dict(t_interval_s=markers_t_s, values=marker_values),
+    )
+
+    streamer = MockupStream(name="test", cfg=cfg)
+    dt = 1 / sfreq
+
+    print("=" * 80)
+    print(f"Starting stream: {stream_name}")
+    print("=" * 80)
+
+    while not stop_event.is_set():
+        sleep_s(dt)
+        streamer.push()
+
+    return 0
+
+
 def run_mockup_streamer_thread(
+    random_data: bool = False,
     **kwargs,
 ) -> tuple[threading.Thread, threading.Event]:
     """Run the streaming within a separate thread and have a stop_event"""
     stop_event = threading.Event()
-    stop_event.clear()
+
+    stream_func = run_random if random_data else run_stream
 
     thread = threading.Thread(
-        target=run_stream,
+        target=stream_func,
         kwargs={"stop_event": stop_event, **kwargs},
     )
 
