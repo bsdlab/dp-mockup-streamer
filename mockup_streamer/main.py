@@ -216,6 +216,7 @@ def load_data(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray | None]:
     }
 
     data, markers, sfreq = loaders[fp.suffix](fp, cfg)
+
     markers = None if len(markers) == 0 else markers
 
     return data, markers, sfreq
@@ -271,7 +272,7 @@ def load_xdf(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray, float]:
 
     marker_stream = cfg.get("marker_stream_name", "")
 
-    d = pyxdf.load_xdf(fp)
+    d = pyxdf.load_xdf(fp, **cfg.get("pyxdf_kwargs", {}))
     snames = [s["info"]["name"][0] for s in d[0]]
 
     sdata = d[0][snames.index(cfg["stream_name"])]
@@ -289,9 +290,8 @@ def load_xdf(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray, float]:
         markers = np.asarray(
             [idx, [v[0] for v in mdata["time_series"]]], dtype="object"
         ).T
-
     else:
-        markers = np.ndarray([])
+        markers = np.asarray([])
 
     return data, markers, sfreq
 
