@@ -100,6 +100,7 @@ class MockupStream:
             self.cfg.get("stream_type", "EEG"),
             self.n_channels,
             self.sfreq,
+            channel_format="double64",
         )
 
         self.info = info
