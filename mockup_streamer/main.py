@@ -201,7 +201,8 @@ class MockupStream:
 
     def push_markers(self, idx_from: int, idx_to: int):
         """Check if there is a marker within the index range and push if yes"""
-        msk = (self.markers[:, 0] > idx_from) & (self.markers[:, 0] < idx_to)
+        msk = (self.markers[:, 0] >= idx_from) & (self.markers[:, 0] < idx_to)
+        # logger.debug(f"Pushing {msk.sum()}, {idx_from=}, {idx_to=} markers")
         if msk.any():
             for mrk in self.markers[msk, 1]:
                 self.outlet_mrk.push_sample([mrk])
