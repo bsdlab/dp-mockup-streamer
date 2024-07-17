@@ -7,7 +7,6 @@ import pylsl
 import pytest
 
 from mockup_streamer.main import MockupStream, glob_path_to_path_list
-from mockup_streamer.utils.logging import logger
 
 
 @pytest.fixture(scope="session")
@@ -63,7 +62,7 @@ def test_random_data_setup():
     assert isinstance(streamer_mrk.outlet_mrk, pylsl.StreamOutlet)
 
 
-def test_pushing_mulitple_streams():
+def test_pushing_multiple_streams():
     cfg_a = dict(
         sampling_freq=100, n_channels=2, pre_buffer_s=1, stream_name="testA"
     )

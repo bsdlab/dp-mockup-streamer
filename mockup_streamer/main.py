@@ -95,12 +95,24 @@ class MockupStream:
 
     def init_outlet(self):
 
+        # set the stream type depending on data in the buffer
+        fmt_map = {
+            "float32": pylsl.cf_float32,
+            "float64": pylsl.cf_double64,
+            "string": pylsl.cf_string,
+            "int32": pylsl.cf_int32,
+            "int16": pylsl.cf_int16,
+            "int8": pylsl.cf_int8,
+            "int64": pylsl.cf_int64,
+        }
+        dtype = fmt_map.get(str(self.buffer.dtype), "string")
+
         info = pylsl.StreamInfo(
             self.cfg["stream_name"],
             self.cfg.get("stream_type", "EEG"),
             self.n_channels,
             self.sfreq,
-            channel_format="double64",
+            channel_format=dtype,
         )
 
         self.info = info
@@ -148,6 +160,7 @@ class MockupStream:
         else:
             fl = self.files[self.file_i]
             data, markers, sfreq = load_data(fl, self.cfg)
+
             self.n_channels = data.shape[1]
 
             # Here could be an assert statement to check if an existing outlet
@@ -176,16 +189,14 @@ class MockupStream:
         self.init_buffer(data, markers=markers)
 
     def push(self):
+
         n_required = (
             int((pylsl.local_clock() - self.t_start_s) * self.sfreq)
             - self.n_pushed
         )
         if n_required > 0:
-            self.outlet.push_chunk(
-                self.buffer[
-                    self.buffer_i : self.buffer_i + n_required
-                ].tolist()
-            )
+            data = self.buffer[self.buffer_i : self.buffer_i + n_required]
+            self.outlet.push_chunk(data)
 
             # if marker stream is associated -> push as well
             if self.outlet_mrk is not None:
@@ -202,7 +213,7 @@ class MockupStream:
     def push_markers(self, idx_from: int, idx_to: int):
         """Check if there is a marker within the index range and push if yes"""
         msk = (self.markers[:, 0] >= idx_from) & (self.markers[:, 0] < idx_to)
-        # logger.debug(f"Pushing {msk.sum()}, {idx_from=}, {idx_to=} markers")
+        logger.debug(f"Pushing {msk.sum()}, {idx_from=}, {idx_to=} markers")
         if msk.any():
             for mrk in self.markers[msk, 1]:
                 self.outlet_mrk.push_sample([mrk])
@@ -272,7 +283,8 @@ def load_xdf(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray, float]:
     tuple[np.ndarray, np.ndarray, float]
     """
 
-    marker_stream = cfg.get("marker_stream_name", "")
+    # print("Loading xdf")
+    marker_stream = cfg.get("markers", {}).get("marker_stream_name", "")
 
     d = pyxdf.load_xdf(fp, **cfg.get("pyxdf_kwargs", {}))
     snames = [s["info"]["name"][0] for s in d[0]]
@@ -280,6 +292,7 @@ def load_xdf(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray, float]:
     sdata = d[0][snames.index(cfg["stream_name"])]
     sfreq = float(sdata["info"]["nominal_srate"][0])
     data = sdata["time_series"]
+    # print(f">>> {marker_stream=}")
 
     if marker_stream != "":
         # align the markers to match index of timepoints closest matching
@@ -292,8 +305,13 @@ def load_xdf(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray, float]:
         markers = np.asarray(
             [idx, [v[0] for v in mdata["time_series"]]], dtype="object"
         ).T
+
+        # print(f"{markers=}")
     else:
         markers = np.asarray([])
+
+    if isinstance(data, list):
+        data = np.array(data)
 
     return data, markers, sfreq
 
