@@ -8,18 +8,16 @@ from mockup_streamer.main import run_mockup_streamer_thread
 from mockup_streamer.utils.logging import logger
 
 
-def run_server(port: int = 8080, ip: str = "127.0.0.1", loglevel: int = 10):
+def run_server(port: int = 8080, ip: str = "127.0.0.1", loglevel: int = 10, **kwargs):
     logger.setLevel(loglevel)
 
     pcommand_map = {
-        "START": run_mockup_streamer_thread,
-        "START_RANDOM": partial(run_mockup_streamer_thread, random_data=True),
+        "START": partial(run_mockup_streamer_thread, **kwargs),
+        "START_RANDOM": partial(run_mockup_streamer_thread, random_data=True, **kwargs),
     }
 
     logger.debug("Initializing server")
-    server = DefaultServer(
-        port, ip=ip, pcommand_map=pcommand_map, name="mockup_server"
-    )
+    server = DefaultServer(port, ip=ip, pcommand_map=pcommand_map, name="mockup_server")
 
     # initialize to start the socket
     server.init_server()

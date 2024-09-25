@@ -81,9 +81,7 @@ class MockupStream:
         if self.markers is not None:
             default_name = self.cfg["stream_name"] + "_markers"
             self.init_outlet_mrk(
-                self.cfg.get("markers", {}).get(
-                    "marker_stream_name", default_name
-                )
+                self.cfg.get("markers", {}).get("marker_stream_name", default_name)
             )
 
     def init_buffer(self, data, markers: np.ndarray | None = None):
@@ -179,10 +177,7 @@ class MockupStream:
 
             self.file_i += 1
 
-            if (
-                self.file_i >= len(self.files)
-                and self.cfg.get("mode", "") == "repeat"
-            ):
+            if self.file_i >= len(self.files) and self.cfg.get("mode", "") == "repeat":
                 self.file_i = 0
 
         # put data to buffer and start indexing from zero
@@ -191,8 +186,7 @@ class MockupStream:
     def push(self):
 
         n_required = (
-            int((pylsl.local_clock() - self.t_start_s) * self.sfreq)
-            - self.n_pushed
+            int((pylsl.local_clock() - self.t_start_s) * self.sfreq) - self.n_pushed
         )
         if n_required > 0:
             data = self.buffer[self.buffer_i : self.buffer_i + n_required]
@@ -289,7 +283,11 @@ def load_xdf(fp: Path, cfg: dict) -> tuple[np.ndarray, np.ndarray, float]:
     d = pyxdf.load_xdf(fp, **cfg.get("pyxdf_kwargs", {}))
     snames = [s["info"]["name"][0] for s in d[0]]
 
-    sdata = d[0][snames.index(cfg["stream_name"])]
+    try:
+        sdata = d[0][snames.index(cfg["stream_name"])]
+    except ValueError:
+        raise KeyError(f"Stream {cfg['stream_name']=} not found in {snames=}")
+
     sfreq = float(sdata["info"]["nominal_srate"][0])
     data = sdata["time_series"]
     # print(f">>> {marker_stream=}")
@@ -458,9 +456,7 @@ def run_stream(
 
     # collect stream names
     stream_names = [s.outlet.get_info().name() for s in streams] + [
-        s.outlet_mrk.get_info().name()
-        for s in streams
-        if s.outlet_mrk is not None
+        s.outlet_mrk.get_info().name() for s in streams if s.outlet_mrk is not None
     ]
 
     logger.debug(f"Initalized {len(stream_names)} streams - {stream_names}")
