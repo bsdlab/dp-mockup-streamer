@@ -83,8 +83,3 @@ telnet 127.0.0.1 8080
 
 All configuration can be found under `./config/`. Check e.g. `./config/streaming.toml` for setting of the mockup stream, and where the source files are globbed from.
 Also note the `./config/streaming_docker.toml` file which would handle the config for running within a container.
-
-## TODOs
-
-- [ ] implement replaying `xdf`
-- [x] include a markers stream
