@@ -20,9 +20,7 @@ def mne_file(
     raw = mne.io.RawArray(data, info)
 
     raw.set_annotations(
-        mne.Annotations(
-            [0, 0.1, 6, 10], [0, 0, 0, 0], ["start", "m1", "m2", "end"]
-        )
+        mne.Annotations([0, 0.1, 6, 10], [0, 0, 0, 0], ["start", "m1", "m2", "end"])
     )
 
     fn = tmp_path_factory.mktemp("data") / "raw.fif"
@@ -32,9 +30,7 @@ def mne_file(
 
 def test_random_data_setup():
 
-    cfg = dict(
-        sampling_freq=100, n_channels=2, pre_buffer_s=300, stream_name="testA"
-    )
+    cfg = dict(sampling_freq=100, n_channels=2, pre_buffer_s=300, stream_name="testA")
 
     cfg_with_marker = dict(
         sampling_freq=100,
@@ -63,9 +59,7 @@ def test_random_data_setup():
 
 
 def test_pushing_multiple_streams():
-    cfg_a = dict(
-        sampling_freq=100, n_channels=2, pre_buffer_s=1, stream_name="testA"
-    )
+    cfg_a = dict(sampling_freq=100, n_channels=2, pre_buffer_s=1, stream_name="testA")
 
     cfg_b = dict(
         sampling_freq=200,
@@ -120,9 +114,7 @@ def test_sender_receiver():
 
     streams = pylsl.resolve_streams()
     idx_test = [i for i, s in enumerate(streams) if s.name() == "test_sr"][0]
-    idx_marker = [
-        i for i, s in enumerate(streams) if s.name() == "test_marker_sr"
-    ][0]
+    idx_marker = [i for i, s in enumerate(streams) if s.name() == "test_marker_sr"][0]
 
     th, ev = start_listener_thread(streams[idx_test], buffer_data)
     thm, evm = start_listener_thread(streams[idx_marker], buffer_mrk)
@@ -203,10 +195,10 @@ def test_mne_file_read(mne_file):
     assert sm.buffer.shape == (1000, 3)
 
 
-def test_xdf_file_read():
-    # What would be a good way of creating an xdf fixture? > provide a sample
-    # xdf as asset?
-    print("XDF test not implemented yet")
+# def test_xdf_file_read():
+#     # What would be a good way of creating an xdf fixture? > provide a sample
+#     # xdf as asset?
+#     print("XDF test not implemented yet")
 
 
 # --> think about how to best include example with the proprietary file formats
