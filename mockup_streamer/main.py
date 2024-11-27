@@ -1,7 +1,16 @@
 # Stream from files defined in the config/streaming.toml
 
 import threading  # necessary to make it accessible via api
-import tomllib
+
+# Safeguard against older python versions
+try:
+    import tomllib
+except ModuleNotFoundError:
+    print(
+        "It seems you are using a python version < 3.11. Please install the `tomli` package via pip for toml parsing."
+    )
+    import tomli as tomllib
+
 from pathlib import Path, PureWindowsPath
 
 import mne
